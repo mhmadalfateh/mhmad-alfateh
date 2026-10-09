@@ -3,12 +3,15 @@ name: Build Fateh Messenger APK
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Download source code
         uses: actions/checkout@v4
 
       - name: Set up Java
@@ -17,35 +20,40 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Check project files
+      - name: Locate Android project
         run: |
-          echo "Checking repository files..."
-          ls -la
-
-      - name: Build APK
-        run: |
-          if [ -f "gradlew" ]; then
-            chmod +x gradlew
-            ./gradlew assembleDebug
-          elif [ -f "FatehMessenger-GitHub-Starter.zip" ]; then
-            unzip -q FatehMessenger-GitHub-Starter.zip -d project
-            cd project
-            if [ -f "gradlew" ]; then
-              chmod +x gradlew
-              ./gradlew assembleDebug
-            else
-              echo "No Gradle wrapper found in ZIP"
-              exit 1
-            fi
+          sudo apt-get update
+          sudo apt-get install -y unzip
+          mkdir -p source
+          if [ -f "FatehMessenger-GitHub-Starter.zip" ]; then
+            unzip -o FatehMessenger-GitHub-Starter.zip -d source
           else
-            echo "No Android Gradle project found"
+            cp -r . source/project
+          fi
+
+          echo "Project files:"
+          find source -maxdepth 4 -type f | head -200
+
+      - name: Find Gradle wrapper
+        run: |
+          WRAPPER=$(find source -type f -name gradlew | head -1)
+
+          if [ -z "$WRAPPER" ]; then
+            echo "::error::No gradlew found. The Android project needs its Gradle build files."
             exit 1
           fi
 
+          echo "GRADLEW_PATH=$WRAPPER" >> "$GITHUB_ENV"
+          echo "PROJECT_DIR=$(dirname "$WRAPPER")" >> "$GITHUB_ENV"
+
+      - name: Build debug APK
+        run: |
+          chmod +x "$GRADLEW_PATH"
+          cd "$PROJECT_DIR"
+          "$GITHUB_WORKSPACE/$GRADLEW_PATH" assembleDebug
+
       - name: Upload APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: FatehMessenger-APK
-          path: |
-            **/build/outputs/apk/debug/*.apk
+          path
